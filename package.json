@@ -1,0 +1,17 @@
+{
+  "name": "shuati-platform",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @shuati/web --filter @shuati/api dev",
+    "demo": "pnpm --parallel --filter @shuati/web --filter @shuati/api demo",
+    "dev:web": "pnpm --filter @shuati/web dev",
+    "dev:api": "pnpm --filter @shuati/api dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:schema": "pnpm --filter @shuati/api db:schema",
+    "db:seed": "pnpm --filter @shuati/api db:seed"
+  }
+}

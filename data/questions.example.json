@@ -1,0 +1,73 @@
+{
+  "subject": {
+    "slug": "sample-subject",
+    "name": "示例科目",
+    "description": "仅用于演示程序功能的虚构数据，不属于任何真实题库"
+  },
+  "chapters": [
+    {
+      "number": 1,
+      "title": "示例章节"
+    }
+  ],
+  "questions": [
+    {
+      "externalKey": "sample-c1-single-001",
+      "chapter": 1,
+      "chapterTitle": "示例章节",
+      "number": 1,
+      "type": "single",
+      "stem": "下列哪个文件扩展名通常用于 TypeScript 源文件？",
+      "options": [
+        { "label": "A", "content": ".ts" },
+        { "label": "B", "content": ".png" },
+        { "label": "C", "content": ".mp3" },
+        { "label": "D", "content": ".zip" }
+      ],
+      "correctLabels": ["A"],
+      "confidence": "high",
+      "isDefective": false,
+      "explanation": "TypeScript 源文件通常使用 .ts 扩展名。",
+      "knowledgePoints": ["文件与语言基础"],
+      "sourceRef": "仓库虚构示例"
+    },
+    {
+      "externalKey": "sample-c1-multiple-001",
+      "chapter": 1,
+      "chapterTitle": "示例章节",
+      "number": 2,
+      "type": "multiple",
+      "stem": "下列哪些属于常见的 Web 前端技术？",
+      "options": [
+        { "label": "A", "content": "HTML" },
+        { "label": "B", "content": "CSS" },
+        { "label": "C", "content": "JavaScript" },
+        { "label": "D", "content": "JPEG" }
+      ],
+      "correctLabels": ["A", "B", "C"],
+      "confidence": "high",
+      "isDefective": false,
+      "explanation": "HTML、CSS 和 JavaScript 是常见的 Web 前端基础技术；JPEG 是图像格式。",
+      "knowledgePoints": ["Web 基础"],
+      "sourceRef": "仓库虚构示例"
+    },
+    {
+      "externalKey": "sample-c1-judge-001",
+      "chapter": 1,
+      "chapterTitle": "示例章节",
+      "number": 3,
+      "type": "judge",
+      "stem": "TypeScript 代码通常可以编译为 JavaScript。",
+      "options": [
+        { "label": "A", "content": "正确" },
+        { "label": "B", "content": "错误" }
+      ],
+      "correctLabels": ["A"],
+      "confidence": "high",
+      "isDefective": false,
+      "explanation": "TypeScript 编译器会移除类型信息并生成 JavaScript。",
+      "knowledgePoints": ["编译基础"],
+      "sourceRef": "仓库虚构示例"
+    }
+  ]
+}

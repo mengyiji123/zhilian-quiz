@@ -1,0 +1,44 @@
+# Dependencies and build artifacts
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+*.log
+
+# Local configuration and secrets
+/.env*
+!/.env.example
+
+# Private question banks and generated datasets
+/*.docx
+/*.pdf
+/*.png
+/data/*.json
+!/data/questions.example.json
+/scripts/build-question-seed.py
+__pycache__/
+*.py[cod]
+
+# Local OCR, deployment bundles, and machine-specific production files
+/tmp/
+/deploy/*.tar.gz
+/deploy/server/
+/deploy/cron/
+/deploy/Caddyfile
+/deploy/nginx/zl.*
+/deploy/nginx/*.acme.conf
+
+# Legacy Docker files are not part of this non-Docker release
+/.dockerignore
+/Dockerfile
+/docker-compose*.yml
+
+# Generated PWA files
+apps/web/public/sw.js
+apps/web/public/workbox-*.js
+
+# Tooling and OS metadata
+.codebase-memory/
+.DS_Store
+Thumbs.db
+
