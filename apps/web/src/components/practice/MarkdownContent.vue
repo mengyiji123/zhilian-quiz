@@ -1,28 +1,59 @@
 <script setup lang="ts">
 import DOMPurify from 'dompurify'
+import renderMathInElement from 'katex/contrib/auto-render'
+import 'katex/dist/katex.min.css'
 import { marked } from 'marked'
-import { computed } from 'vue'
+import { computed, nextTick, onMounted, useTemplateRef, watch } from 'vue'
+
+import { protectMathInMarkdown } from '../../lib/mathMarkdown'
 
 const props = defineProps<{
   content: string
 }>()
 
-const renderedHtml = computed(() => DOMPurify.sanitize(
-  marked.parse(props.content, {
+const contentElement = useTemplateRef<HTMLDivElement>('content')
+
+const renderedHtml = computed(() => {
+  const protectedMath = protectMathInMarkdown(props.content)
+  const parsedMarkdown = marked.parse(protectedMath.markdown, {
     async: false,
     breaks: true,
     gfm: true,
-  }),
-  {
+  })
+
+  return DOMPurify.sanitize(protectedMath.restore(parsedMarkdown), {
     USE_PROFILES: { html: true },
     FORBID_TAGS: ['embed', 'iframe', 'img', 'object', 'style'],
     FORBID_ATTR: ['style'],
-  },
-))
+  })
+})
+
+async function renderMath(): Promise<void> {
+  await nextTick()
+  if (!contentElement.value) return
+
+  renderMathInElement(contentElement.value, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+      { left: '$', right: '$', display: false },
+    ],
+    ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    throwOnError: false,
+    strict: 'ignore',
+    trust: false,
+    maxSize: 10,
+    maxExpand: 1000,
+  })
+}
+
+onMounted(renderMath)
+watch(renderedHtml, renderMath, { flush: 'post' })
 </script>
 
 <template>
-  <div class="markdown-content" v-html="renderedHtml" />
+  <div ref="content" class="markdown-content" v-html="renderedHtml" />
 </template>
 
 <style scoped>
@@ -83,6 +114,15 @@ const renderedHtml = computed(() => DOMPurify.sanitize(
   background: transparent;
   color: inherit;
   font-size: 0.82rem;
+}
+.markdown-content :deep(.katex) { font-size: 1em; }
+.markdown-content :deep(.katex-display) {
+  max-width: 100%;
+  margin: 0.8em 0;
+  padding: 0.2em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 .markdown-content :deep(a) {
   color: var(--blue);
