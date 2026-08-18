@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 import { requireAdmin, requireAuth } from '../auth.js'
 import { db } from '../db.js'
+import { paginationClause } from '../domain/sql-values.js'
 import { asyncHandler, HttpError, parseBody, parseId } from '../http.js'
 
 interface UserRow extends RowDataPacket {
@@ -274,6 +275,7 @@ adminRouter.get(
       type_asc: 'q.type, c.sort_order, q.sort_order, q.id',
     }
     const offset = (input.page - 1) * input.pageSize
+    const pagination = paginationClause(input.pageSize, offset)
     const [[rows], [countRows]] = await Promise.all([
       db.execute<AdminQuestionRow[]>(
         `SELECT q.id, q.external_key, q.question_no, q.type, q.stem,
@@ -288,8 +290,8 @@ adminRouter.get(
          ${questionListFrom}
          WHERE ${filters.sql}
          ORDER BY ${orderBy[input.sort]}
-         LIMIT ? OFFSET ?`,
-        [...filters.values, input.pageSize, offset],
+         ${pagination}`,
+        filters.values,
       ),
       db.execute<(RowDataPacket & { total: number })[]>(
         `SELECT COUNT(*) AS total ${questionListFrom} WHERE ${filters.sql}`,

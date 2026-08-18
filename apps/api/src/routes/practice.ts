@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { requireAuth } from '../auth.js'
 import { db } from '../db.js'
 import { answersMatch, normalizeLabels } from '../domain/answers.js'
+import { nullableMessage } from '../domain/sql-values.js'
 import { asyncHandler, HttpError, parseBody, parseId } from '../http.js'
 
 type PracticeMode = 'subject' | 'chapter' | 'random' | 'wrong' | 'favorite'
@@ -499,9 +500,10 @@ practiceRouter.post(
     )
     if (!questions[0]) throw new HttpError(404, '题目不存在')
 
+    const message = nullableMessage(input.message)
     const [result] = await db.execute<ResultSetHeader>(
       `INSERT INTO question_error_reports (question_id, user_id, category, message)
-       VALUES (?, ?, ?, NULLIF(?, ''))
+       VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          category = VALUES(category),
          message = VALUES(message),
@@ -509,7 +511,7 @@ practiceRouter.post(
          resolved_by = NULL,
          resolved_at = NULL,
          updated_at = CURRENT_TIMESTAMP`,
-      [questionId, request.user!.id, input.category, input.message],
+      [questionId, request.user!.id, input.category, message],
     )
     const [reports] = await db.execute<(RowDataPacket & { id: number; status: 'open' })[]>(
       `SELECT id, status FROM question_error_reports
