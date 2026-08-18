@@ -41,13 +41,14 @@ async function archivePractices(connection: PoolConnection, cutoff: Date, limit:
   sessions: number
   answers: number
 }> {
+  const safeLimit = Math.max(1, Math.trunc(limit))
   await connection.beginTransaction()
   try {
     const [rows] = await connection.execute<IdRow[]>(
       `SELECT id FROM practice_sessions
        WHERE completed_at IS NOT NULL AND completed_at < ?
-       ORDER BY completed_at, id LIMIT ? FOR UPDATE SKIP LOCKED`,
-      [cutoff, limit],
+       ORDER BY completed_at, id LIMIT ${safeLimit} FOR UPDATE SKIP LOCKED`,
+      [cutoff],
     )
     if (!rows.length) {
       await connection.commit()
@@ -99,12 +100,13 @@ async function archivePractices(connection: PoolConnection, cutoff: Date, limit:
 }
 
 async function archiveAiMessages(connection: PoolConnection, cutoff: Date, limit: number): Promise<number> {
+  const safeLimit = Math.max(1, Math.trunc(limit))
   await connection.beginTransaction()
   try {
     const [rows] = await connection.execute<IdRow[]>(
       `SELECT id FROM ai_messages
-       WHERE created_at < ? ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED`,
-      [cutoff, limit],
+       WHERE created_at < ? ORDER BY created_at, id LIMIT ${safeLimit} FOR UPDATE SKIP LOCKED`,
+      [cutoff],
     )
     if (!rows.length) {
       await connection.commit()
