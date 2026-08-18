@@ -1,6 +1,8 @@
 export type UserRole = 'admin' | 'user'
 export type QuestionType = 'single' | 'multiple' | 'judge'
 export type PracticeMode = 'subject' | 'chapter' | 'random' | 'wrong' | 'favorite'
+export type QuestionReportCategory = 'stem' | 'option' | 'answer' | 'explanation' | 'other'
+export type QuestionReportStatus = 'open' | 'resolved'
 
 export interface User {
   id: number
@@ -81,4 +83,65 @@ export interface PracticeQuestionResponse {
   question: PracticeQuestion
   position: { index: number; total: number }
   result: AnswerResult | null
+}
+
+export interface AdminQuestionListItem {
+  id: number
+  externalKey: string
+  number: number
+  type: QuestionType
+  stem: string
+  subjectId: number
+  subjectName: string
+  chapterId: number
+  chapterNumber: number
+  chapterTitle: string
+  confidence: 'high' | 'medium' | 'low'
+  isDefective: boolean
+  correctLabels: string[]
+  openReportCount: number
+  lastReportedAt: string | null
+  updatedAt: string
+}
+
+export interface AdminQuestionOption extends QuestionOption {
+  isCorrect: boolean
+}
+
+export interface QuestionErrorReport {
+  id: number
+  category: QuestionReportCategory
+  message: string
+  status: QuestionReportStatus
+  reporterName: string
+  reporterUsername: string
+  createdAt: string
+  updatedAt: string
+  resolvedAt: string | null
+}
+
+export interface AdminQuestionDetail extends Omit<AdminQuestionListItem, 'correctLabels' | 'lastReportedAt'> {
+  explanation: string
+  options: AdminQuestionOption[]
+  knowledgePoints: Array<{ id: number; name: string }>
+  reports: QuestionErrorReport[]
+}
+
+export interface AdminQuestionUpdateInput {
+  type: QuestionType
+  stem: string
+  explanation: string
+  confidence: 'high' | 'medium' | 'low'
+  isDefective: boolean
+  options: AdminQuestionOption[]
+  knowledgePointIds: number[]
+}
+
+export interface AdminQuestionFilters {
+  q: string
+  subjectId: number
+  chapterId: number
+  type: QuestionType | ''
+  reportStatus: 'all' | 'reported' | 'unreported'
+  sort: 'reports_desc' | 'updated_desc' | 'chapter_asc' | 'question_no_asc' | 'type_asc'
 }

@@ -34,6 +34,7 @@ interface SeedPayload {
 interface DemoQuestion extends SeedQuestion {
   id: number
   knowledgePointIds: number[]
+  updatedAt: string
 }
 
 interface DemoSession {
@@ -60,6 +61,18 @@ interface DemoUser {
   createdAt: string
 }
 
+interface DemoReport {
+  id: number
+  questionId: number
+  userId: number
+  category: 'stem' | 'option' | 'answer' | 'explanation' | 'other'
+  message: string
+  status: 'open' | 'resolved'
+  createdAt: string
+  updatedAt: string
+  resolvedAt: string | null
+}
+
 const seedPath = fileURLToPath(new URL('../../../data/questions.example.json', import.meta.url))
 const seed = JSON.parse(await readFile(seedPath, 'utf8')) as SeedPayload
 const knowledgePointIds = new Map<string, number>()
@@ -76,6 +89,7 @@ const questions: DemoQuestion[] = seed.questions.map((question, index) => ({
   ...question,
   id: index + 1,
   knowledgePointIds: question.knowledgePoints.map((name) => knowledgePointIds.get(`${question.chapter}:${name}`)!),
+  updatedAt: new Date(Date.now() - index * 3_600_000).toISOString(),
 }))
 const questionById = new Map(questions.map((question) => [question.id, question]))
 const sessions = new Map<string, DemoSession>()
@@ -88,7 +102,32 @@ const demoUsers: DemoUser[] = [
   { id: 1, username: 'demo-admin', displayName: '演示管理员', role: 'admin', isActive: true, createdAt: new Date().toISOString() },
   { id: 2, username: 'demo-user', displayName: '学习账号', role: 'user', isActive: true, createdAt: new Date().toISOString() },
 ]
+const questionReports: DemoReport[] = [
+  {
+    id: 1,
+    questionId: questions[2]?.id ?? 1,
+    userId: 2,
+    category: 'answer',
+    message: '答案和解析中的结论似乎不一致，请管理员核对。',
+    status: 'open',
+    createdAt: new Date(Date.now() - 45 * 60_000).toISOString(),
+    updatedAt: new Date(Date.now() - 45 * 60_000).toISOString(),
+    resolvedAt: null,
+  },
+  {
+    id: 2,
+    questionId: questions[17]?.id ?? 2,
+    userId: 2,
+    category: 'option',
+    message: 'C 选项可能漏了一个条件。',
+    status: 'open',
+    createdAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    updatedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    resolvedAt: null,
+  },
+]
 let nextUserId = 3
+let nextReportId = 3
 let aiSettings = {
   endpointUrl: 'https://example.com/v1/chat/completions',
   model: '演示模型',
@@ -338,6 +377,15 @@ app.get('/api/practice/sessions/:sessionId', (request, response) => {
       total: session.questionIds.length,
       currentIndex: session.currentIndex,
       completedAt: session.completedAt,
+      answerSheet: session.questionIds.map((questionId, index) => {
+        const answer = answers.get(answerKey(session.id, questionId))
+        return {
+          index,
+          questionId,
+          answered: Boolean(answer),
+          isCorrect: answer?.isCorrect ?? null,
+        }
+      }),
     },
   })
 })
@@ -404,6 +452,42 @@ app.put('/api/practice/questions/:questionId/favorite', (request, response) => {
   response.json({ favorite })
 })
 
+app.post('/api/practice/questions/:questionId/reports', (request, response) => {
+  const questionId = numericParam(request.params.questionId)
+  if (!questionById.has(questionId)) {
+    response.status(404).json({ error: '演示题目不存在' })
+    return
+  }
+  const body = request.body as { category?: DemoReport['category']; message?: string }
+  const categories: DemoReport['category'][] = ['stem', 'option', 'answer', 'explanation', 'other']
+  const category = categories.includes(body.category ?? 'other') ? (body.category ?? 'other') : 'other'
+  const now = new Date().toISOString()
+  let report = questionReports.find((item) => item.questionId === questionId && item.userId === currentUser.id)
+  if (report) {
+    Object.assign(report, {
+      category,
+      message: String(body.message ?? '').slice(0, 1000),
+      status: 'open',
+      updatedAt: now,
+      resolvedAt: null,
+    })
+  } else {
+    report = {
+      id: nextReportId++,
+      questionId,
+      userId: currentUser.id,
+      category,
+      message: String(body.message ?? '').slice(0, 1000),
+      status: 'open',
+      createdAt: now,
+      updatedAt: now,
+      resolvedAt: null,
+    }
+    questionReports.push(report)
+  }
+  response.status(201).json({ report: { id: report.id, status: report.status } })
+})
+
 app.get('/api/library/:kind', (request, response) => {
   const kind = String(request.params.kind ?? '')
   const ids = kind === 'wrong' ? [...wrongQuestionIds] : [...favoriteQuestionIds]
@@ -462,6 +546,172 @@ app.post('/api/ai/questions/:questionId/ask', (request, response) => {
   )
   aiMessages.set(questionId, history)
   response.json({ answer })
+})
+
+app.get('/api/admin/questions', (request, response) => {
+  const search = String(request.query.q ?? '').trim().toLocaleLowerCase()
+  const subjectId = Number(request.query.subjectId) || 0
+  const chapterId = Number(request.query.chapterId) || 0
+  const type = String(request.query.type ?? '') as QuestionType | ''
+  const reportStatus = String(request.query.reportStatus ?? 'all')
+  const sort = String(request.query.sort ?? 'reports_desc')
+  const page = Math.max(1, Number(request.query.page) || 1)
+  const pageSize = Math.min(50, Math.max(10, Number(request.query.pageSize) || 20))
+  const openReportsFor = (questionId: number) => questionReports.filter((report) => (
+    report.questionId === questionId && report.status === 'open'
+  ))
+  let filtered = questions.filter((question) => {
+    const searchable = [
+      question.externalKey,
+      question.stem,
+      question.explanation,
+      ...question.options.map((option) => option.content),
+    ].join('\n').toLocaleLowerCase()
+    const reportCount = openReportsFor(question.id).length
+    return (!search || searchable.includes(search))
+      && (!subjectId || subjectId === 1)
+      && (!chapterId || question.chapter === chapterId)
+      && (!type || question.type === type)
+      && (reportStatus !== 'reported' || reportCount > 0)
+      && (reportStatus !== 'unreported' || reportCount === 0)
+  })
+  filtered = [...filtered].sort((left, right) => {
+    if (sort === 'updated_desc') return right.updatedAt.localeCompare(left.updatedAt) || right.id - left.id
+    if (sort === 'chapter_asc') return left.chapter - right.chapter || left.number - right.number || left.id - right.id
+    if (sort === 'question_no_asc') return left.number - right.number || left.id - right.id
+    if (sort === 'type_asc') return left.type.localeCompare(right.type) || left.chapter - right.chapter || left.number - right.number
+    const leftReports = openReportsFor(left.id)
+    const rightReports = openReportsFor(right.id)
+    return rightReports.length - leftReports.length
+      || (rightReports[0]?.updatedAt ?? '').localeCompare(leftReports[0]?.updatedAt ?? '')
+      || left.chapter - right.chapter
+      || left.number - right.number
+  })
+  const total = filtered.length
+  const start = (page - 1) * pageSize
+  const items = filtered.slice(start, start + pageSize).map((question) => {
+    const openReports = openReportsFor(question.id)
+    return {
+      id: question.id,
+      externalKey: question.externalKey,
+      number: question.number,
+      type: question.type,
+      stem: question.stem,
+      subjectId: 1,
+      subjectName: seed.subject.name,
+      chapterId: question.chapter,
+      chapterNumber: question.chapter,
+      chapterTitle: question.chapterTitle,
+      confidence: question.confidence,
+      isDefective: question.isDefective,
+      correctLabels: question.correctLabels,
+      openReportCount: openReports.length,
+      lastReportedAt: openReports[0]?.updatedAt ?? null,
+      updatedAt: question.updatedAt,
+    }
+  })
+  response.json({ items, pagination: { page, pageSize, total } })
+})
+
+app.get('/api/admin/questions/:id', (request, response) => {
+  const question = questionById.get(numericParam(request.params.id))
+  if (!question) {
+    response.status(404).json({ error: '演示题目不存在' })
+    return
+  }
+  const reports = questionReports
+    .filter((report) => report.questionId === question.id)
+    .sort((left, right) => Number(right.status === 'open') - Number(left.status === 'open') || right.updatedAt.localeCompare(left.updatedAt))
+    .map((report) => {
+      const reporter = demoUsers.find((user) => user.id === report.userId)
+      return {
+        ...report,
+        reporterName: reporter?.displayName ?? '未知用户',
+        reporterUsername: reporter?.username ?? 'unknown',
+      }
+    })
+  response.json({
+    question: {
+      id: question.id,
+      externalKey: question.externalKey,
+      number: question.number,
+      type: question.type,
+      stem: question.stem,
+      explanation: question.explanation,
+      subjectId: 1,
+      subjectName: seed.subject.name,
+      chapterId: question.chapter,
+      chapterNumber: question.chapter,
+      chapterTitle: question.chapterTitle,
+      confidence: question.confidence,
+      isDefective: question.isDefective,
+      openReportCount: reports.filter((report) => report.status === 'open').length,
+      updatedAt: question.updatedAt,
+      options: question.options.map((option) => ({
+        ...option,
+        isCorrect: question.correctLabels.includes(option.label),
+      })),
+      knowledgePoints: question.knowledgePoints.map((name, index) => ({
+        id: question.knowledgePointIds[index],
+        name,
+      })),
+      reports,
+    },
+  })
+})
+
+app.put('/api/admin/questions/:id', (request, response) => {
+  const question = questionById.get(numericParam(request.params.id))
+  if (!question) {
+    response.status(404).json({ error: '演示题目不存在' })
+    return
+  }
+  const body = request.body as {
+    type?: QuestionType
+    stem?: string
+    explanation?: string
+    confidence?: DemoQuestion['confidence']
+    isDefective?: boolean
+    options?: Array<{ label: string; content: string; isCorrect: boolean }>
+    knowledgePointIds?: number[]
+  }
+  if (!body.stem?.trim() || !Array.isArray(body.options) || body.options.length < 2) {
+    response.status(400).json({ error: '题干和选项不能为空' })
+    return
+  }
+  question.type = body.type ?? question.type
+  question.stem = body.stem.trim()
+  question.explanation = String(body.explanation ?? '').trim()
+  question.confidence = body.confidence ?? question.confidence
+  question.isDefective = Boolean(body.isDefective)
+  question.options = body.options.map((option) => ({
+    label: option.label.trim().toUpperCase(),
+    content: option.content.trim(),
+  }))
+  question.correctLabels = body.options.filter((option) => option.isCorrect).map((option) => option.label.trim().toUpperCase())
+  if (Array.isArray(body.knowledgePointIds)) {
+    question.knowledgePointIds = [...body.knowledgePointIds]
+    question.knowledgePoints = body.knowledgePointIds.map((id) => {
+      const entry = [...knowledgePointIds.entries()].find(([, pointId]) => pointId === id)
+      return entry?.[0].slice(entry[0].indexOf(':') + 1) ?? `知识点 ${id}`
+    })
+  }
+  question.updatedAt = new Date().toISOString()
+  response.status(204).end()
+})
+
+app.post('/api/admin/questions/:id/reports/resolve', (request, response) => {
+  const questionId = numericParam(request.params.id)
+  const now = new Date().toISOString()
+  let resolved = 0
+  for (const report of questionReports) {
+    if (report.questionId !== questionId || report.status !== 'open') continue
+    report.status = 'resolved'
+    report.resolvedAt = now
+    report.updatedAt = now
+    resolved += 1
+  }
+  response.json({ resolved })
 })
 
 app.get('/api/admin/users', (_request, response) => response.json({ users: demoUsers, userLimit: 5 }))

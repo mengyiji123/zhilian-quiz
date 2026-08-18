@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref, shallowRef } from 'vue'
 
 import { api } from '@/lib/api'
+import AdminSectionNav from '@/components/admin/AdminSectionNav.vue'
 
 interface ManagedUser {
   id: number
@@ -111,10 +112,11 @@ onMounted(load)
 
 <template>
   <div class="page admin-page">
+    <AdminSectionNav />
     <header class="page-header">
       <div>
         <h1 class="page-title">系统管理</h1>
-        <p class="page-subtitle">管理最多 5 个账号，并配置答题后的 AI 快问服务。</p>
+        <p class="page-subtitle">管理学习账号、AI 快问服务与题库内容。</p>
       </div>
     </header>
 

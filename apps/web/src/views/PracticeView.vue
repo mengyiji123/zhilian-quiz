@@ -8,12 +8,14 @@ import AnswerSheetDrawer from '@/components/practice/AnswerSheetDrawer.vue'
 import DrawingBoardModal from '@/components/practice/DrawingBoardModal.vue'
 import PracticeToolbar from '@/components/practice/PracticeToolbar.vue'
 import QuestionCard from '@/components/practice/QuestionCard.vue'
+import QuestionReportDialog from '@/components/practice/QuestionReportDialog.vue'
 import { useAiTutor } from '@/composables/useAiTutor'
 import { usePracticeSession } from '@/composables/usePracticeSession'
 
 const route = useRoute()
 const drawingOpen = shallowRef(false)
 const answerSheetOpen = shallowRef(false)
+const reportOpen = shallowRef(false)
 const session = usePracticeSession({ sessionId: String(route.params.sessionId) })
 const aiTutor = useAiTutor()
 const selectedModel = computed({
@@ -78,9 +80,8 @@ function navigateFromAnswerSheet(index: number): void {
       <AnswerPanel
         v-if="session.result.value"
         :result="session.result.value"
-        :can-next="session.canNext.value"
         @ask-ai="openAi"
-        @next="session.goTo(session.index.value + 1)"
+        @report-error="reportOpen = true"
       />
 
       <nav class="practice-navigation panel" aria-label="题目导航">
@@ -121,6 +122,12 @@ function navigateFromAnswerSheet(index: number): void {
         :error="aiTutor.error.value"
         @close="aiTutor.close"
         @send="aiTutor.send"
+      />
+      <QuestionReportDialog
+        :open="reportOpen"
+        :question-id="session.question.value.id"
+        :question-label="questionLabel"
+        @close="reportOpen = false"
       />
     </template>
   </div>

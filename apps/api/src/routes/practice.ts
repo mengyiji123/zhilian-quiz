@@ -74,6 +74,11 @@ const answerSchema = z.object({
 
 const favoriteSchema = z.object({ favorite: z.boolean() })
 
+const reportErrorSchema = z.object({
+  category: z.enum(['stem', 'option', 'answer', 'explanation', 'other']),
+  message: z.string().trim().max(1000).default(''),
+})
+
 function jsonArray<T>(value: string | T[]): T[] {
   return Array.isArray(value) ? value : (JSON.parse(value) as T[])
 }
@@ -480,5 +485,37 @@ practiceRouter.put(
       )
     }
     response.json({ favorite: input.favorite })
+  }),
+)
+
+practiceRouter.post(
+  '/questions/:questionId/reports',
+  asyncHandler(async (request, response) => {
+    const questionId = parseId(request.params.questionId, '题目 ID')
+    const input = parseBody(reportErrorSchema, request.body)
+    const [questions] = await db.execute<(RowDataPacket & { id: number })[]>(
+      'SELECT id FROM questions WHERE id = ? AND is_active = TRUE LIMIT 1',
+      [questionId],
+    )
+    if (!questions[0]) throw new HttpError(404, '题目不存在')
+
+    const [result] = await db.execute<ResultSetHeader>(
+      `INSERT INTO question_error_reports (question_id, user_id, category, message)
+       VALUES (?, ?, ?, NULLIF(?, ''))
+       ON DUPLICATE KEY UPDATE
+         category = VALUES(category),
+         message = VALUES(message),
+         status = 'open',
+         resolved_by = NULL,
+         resolved_at = NULL,
+         updated_at = CURRENT_TIMESTAMP`,
+      [questionId, request.user!.id, input.category, input.message],
+    )
+    const [reports] = await db.execute<(RowDataPacket & { id: number; status: 'open' })[]>(
+      `SELECT id, status FROM question_error_reports
+       WHERE question_id = ? AND user_id = ? LIMIT 1`,
+      [questionId, request.user!.id],
+    )
+    response.status(result.affectedRows === 1 ? 201 : 200).json({ report: reports[0] })
   }),
 )

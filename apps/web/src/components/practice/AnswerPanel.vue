@@ -5,12 +5,11 @@ import type { AnswerResult } from '@/types'
 
 const props = defineProps<{
   result: AnswerResult
-  canNext: boolean
 }>()
 
 defineEmits<{
   askAi: []
-  next: []
+  reportError: []
 }>()
 
 const state = computed(() => {
@@ -43,7 +42,7 @@ const confidenceLabel = computed(() => ({ high: '高', medium: '中', low: '低'
       <button class="button secondary" type="button" @click="$emit('askAi')">
         问问 AI
       </button>
-      <button v-if="canNext" class="button" type="button" @click="$emit('next')">下一题</button>
+      <button class="button report-button" type="button" @click="$emit('reportError')">报告错误</button>
     </footer>
   </section>
 </template>
@@ -66,5 +65,7 @@ const confidenceLabel = computed(() => ({ high: '高', medium: '中', low: '低'
 .explanation h2 { margin-bottom: 8px; color: var(--navy); font-size: 1rem; }
 .explanation p { margin-bottom: 0; color: #3f5362; line-height: 1.85; white-space: pre-wrap; }
 .answer-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.report-button { border-color: #e3c98d; background: #fff9ea; color: #8a5a0b; }
+.report-button:hover { border-color: #d6b66c; background: var(--gold-soft); }
 @media (max-width: 560px) { .answer-panel { padding: 20px 17px; } .answer-header { flex-direction: column; } .answer-actions .button { flex: 1; } }
 </style>

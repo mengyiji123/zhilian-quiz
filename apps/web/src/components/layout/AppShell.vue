@@ -7,13 +7,24 @@ import { useAuthStore } from '@/stores/auth'
 const auth = useAuthStore()
 const router = useRouter()
 
-const navigation = computed(() => [
+const learningNavigation = computed(() => [
   { to: '/', label: '首页', glyph: '⌂' },
   { to: '/practice/setup', label: '刷题', glyph: '✓' },
   { to: '/wrong', label: '错题', glyph: '!' },
   { to: '/favorites', label: '收藏', glyph: '☆' },
   { to: '/stats', label: '统计', glyph: '▥' },
-  ...(auth.isAdmin ? [{ to: '/admin', label: '管理', glyph: '⚙' }] : []),
+])
+
+const adminNavigation = computed(() => auth.isAdmin
+  ? [
+      { to: '/admin/questions', label: '题库管理', glyph: '题' },
+      { to: '/admin', label: '系统设置', glyph: '⚙' },
+    ]
+  : [])
+
+const bottomNavigation = computed(() => [
+  ...learningNavigation.value,
+  ...(auth.isAdmin ? [{ to: '/admin/questions', label: '管理', glyph: '题' }] : []),
 ])
 
 async function logout(): Promise<void> {
@@ -31,7 +42,15 @@ async function logout(): Promise<void> {
       </RouterLink>
 
       <nav class="side-nav" aria-label="主要导航">
-        <RouterLink v-for="item in navigation" :key="item.to" class="nav-link" :to="item.to">
+        <RouterLink v-for="item in learningNavigation" :key="item.to" class="nav-link" :to="item.to">
+          <span class="nav-glyph" aria-hidden="true">{{ item.glyph }}</span>
+          <span>{{ item.label }}</span>
+        </RouterLink>
+      </nav>
+
+      <nav v-if="adminNavigation.length" class="side-nav admin-nav" aria-label="管理导航">
+        <span class="nav-section-label">管理工具</span>
+        <RouterLink v-for="item in adminNavigation" :key="item.to" class="nav-link" :to="item.to">
           <span class="nav-glyph" aria-hidden="true">{{ item.glyph }}</span>
           <span>{{ item.label }}</span>
         </RouterLink>
@@ -52,7 +71,7 @@ async function logout(): Promise<void> {
     </main>
 
     <nav class="bottom-nav" aria-label="移动端主要导航">
-      <RouterLink v-for="item in navigation" :key="item.to" class="bottom-link" :to="item.to">
+      <RouterLink v-for="item in bottomNavigation" :key="item.to" class="bottom-link" :to="item.to">
         <span class="bottom-glyph" aria-hidden="true">{{ item.glyph }}</span>
         <span>{{ item.label }}</span>
       </RouterLink>
@@ -66,6 +85,8 @@ async function logout(): Promise<void> {
 .brand { display: flex; align-items: center; gap: 11px; padding: 0 10px 25px; color: white; font-size: 1.28rem; font-weight: 780; letter-spacing: 0.06em; }
 .brand-icon { width: 36px; height: 36px; border-radius: 9px; box-shadow: 0 7px 18px rgba(4, 23, 37, 0.2); }
 .side-nav { display: grid; gap: 5px; }
+.admin-nav { margin-top: 18px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+.nav-section-label { padding: 0 13px 5px; color: #819dab; font-size: 0.68rem; font-weight: 650; letter-spacing: 0.06em; }
 .nav-link { position: relative; min-height: 48px; display: flex; align-items: center; gap: 12px; padding: 10px 13px; border-radius: var(--radius-control); color: #c5d4dd; font-weight: 600; transition: background-color 120ms ease, color 120ms ease, transform 120ms ease; }
 .nav-link:hover { background: rgba(255, 255, 255, 0.07); color: white; }
 .nav-link:active { transform: translateY(1px); }

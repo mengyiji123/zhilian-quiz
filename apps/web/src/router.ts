@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import AppShell from '@/components/layout/AppShell.vue'
 import { useAuthStore } from '@/stores/auth'
 import AdminView from '@/views/AdminView.vue'
+import AdminQuestionsView from '@/views/AdminQuestionsView.vue'
 import DashboardView from '@/views/DashboardView.vue'
 import LibraryView from '@/views/LibraryView.vue'
 import LoginView from '@/views/LoginView.vue'
@@ -25,6 +26,7 @@ export const router = createRouter({
         { path: 'favorites', name: 'favorites', component: LibraryView, props: { kind: 'favorites' } },
         { path: 'stats', name: 'stats', component: StatsView },
         { path: 'admin', name: 'admin', component: AdminView, meta: { admin: true } },
+        { path: 'admin/questions', name: 'admin-questions', component: AdminQuestionsView, meta: { admin: true } },
       ],
     },
   ],

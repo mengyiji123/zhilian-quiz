@@ -111,6 +111,26 @@ CREATE TABLE IF NOT EXISTS question_knowledge_points (
   CONSTRAINT fk_qkp_knowledge_point FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS question_error_reports (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  question_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  category ENUM('stem', 'option', 'answer', 'explanation', 'other') NOT NULL DEFAULT 'other',
+  message VARCHAR(1000) NULL,
+  status ENUM('open', 'resolved') NOT NULL DEFAULT 'open',
+  resolved_by BIGINT UNSIGNED NULL,
+  resolved_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_question_error_reports_question_user (question_id, user_id),
+  KEY ix_question_error_reports_status_question (status, question_id, updated_at),
+  KEY ix_question_error_reports_user (user_id),
+  CONSTRAINT fk_question_error_reports_question FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_question_error_reports_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_question_error_reports_resolver FOREIGN KEY (resolved_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS practice_sessions (
   id CHAR(36) NOT NULL,
   user_id BIGINT UNSIGNED NOT NULL,
