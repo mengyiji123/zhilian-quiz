@@ -74,13 +74,28 @@ function typeLabel(type: QuestionType): string {
 </template>
 
 <style scoped>
-.question-list { min-height: 620px; display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
+.question-list {
+  height: clamp(420px, calc(100vh - 28px), 760px);
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
 .list-heading { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 15px; border-bottom: 1px solid var(--line); }
 .list-heading div { display: grid; gap: 2px; }
 .list-heading strong { color: var(--navy); font-size: 0.94rem; }
 .list-heading span { color: var(--muted); font-size: 0.73rem; }
 .range { white-space: nowrap; }
-.rows { align-content: start; display: grid; transition: opacity 120ms ease; }
+.rows {
+  min-height: 0;
+  align-content: start;
+  display: grid;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  transition: opacity 120ms ease;
+  -webkit-overflow-scrolling: touch;
+}
 .rows.refreshing { opacity: 0.58; pointer-events: none; }
 .question-row { min-width: 0; display: grid; gap: 8px; padding: 14px 15px 15px; border: 0; border-bottom: 1px solid #e8eef1; background: white; color: inherit; text-align: left; cursor: pointer; transition: background-color 120ms ease, box-shadow 120ms ease; }
 .question-row:hover { background: #f8fbfc; }
@@ -101,5 +116,5 @@ function typeLabel(type: QuestionType): string {
 .pagination { min-height: 54px; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.76rem; }
 .page-button { width: 36px; height: 36px; border: 1px solid var(--line); border-radius: var(--radius-small); background: white; color: var(--navy); cursor: pointer; font-size: 1.2rem; }
 .page-button:disabled { cursor: not-allowed; opacity: 0.4; }
-@media (max-width: 900px) { .question-list { min-height: 420px; max-height: 58vh; } }
+@media (max-width: 900px) { .question-list { height: clamp(320px, 58vh, 620px); } }
 </style>
