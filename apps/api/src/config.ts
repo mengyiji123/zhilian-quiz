@@ -10,6 +10,11 @@ const booleanString = z
   .default('false')
   .transform((value) => value === 'true')
 
+const enabledBooleanString = z
+  .enum(['true', 'false'])
+  .default('true')
+  .transform((value) => value === 'true')
+
 const schema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL 未配置'),
   QUESTION_DATA_PATH: z.string().min(1).default('data/questions.json'),
@@ -23,6 +28,11 @@ const schema = z.object({
   COOKIE_SECURE: booleanString,
   TRUST_PROXY: booleanString,
   WEB_DIST_PATH: z.string().optional(),
+  MAINTENANCE_ENABLED: enabledBooleanString,
+  MAINTENANCE_INTERVAL_HOURS: z.coerce.number().int().min(1).max(168).default(24),
+  PRACTICE_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(180),
+  AI_MESSAGE_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(180),
+  MAINTENANCE_BATCH_SIZE: z.coerce.number().int().min(50).max(5000).default(500),
 })
 
 const parsed = schema.safeParse(process.env)
@@ -45,4 +55,9 @@ export const config = {
   cookieSecure: parsed.data.COOKIE_SECURE,
   trustProxy: parsed.data.TRUST_PROXY,
   webDistPath: parsed.data.WEB_DIST_PATH,
+  maintenanceEnabled: parsed.data.MAINTENANCE_ENABLED,
+  maintenanceIntervalHours: parsed.data.MAINTENANCE_INTERVAL_HOURS,
+  practiceRetentionDays: parsed.data.PRACTICE_RETENTION_DAYS,
+  aiMessageRetentionDays: parsed.data.AI_MESSAGE_RETENTION_DAYS,
+  maintenanceBatchSize: parsed.data.MAINTENANCE_BATCH_SIZE,
 }

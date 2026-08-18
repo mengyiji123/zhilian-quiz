@@ -9,6 +9,8 @@ import { db } from '../db.js'
 import { answersMatch, normalizeLabels } from '../domain/answers.js'
 import { nullableMessage } from '../domain/sql-values.js'
 import { asyncHandler, HttpError, parseBody, parseId } from '../http.js'
+import { getCachedQuestion } from '../question-cache.js'
+import { invalidateStatsCache } from './stats.js'
 
 type PracticeMode = 'subject' | 'chapter' | 'random' | 'wrong' | 'favorite'
 
@@ -20,28 +22,6 @@ interface SessionRow extends RowDataPacket {
   question_ids: string | number[]
   current_index: number
   completed_at: Date | null
-}
-
-interface QuestionRow extends RowDataPacket {
-  id: number
-  external_key: string
-  question_no: number
-  type: 'single' | 'multiple' | 'judge'
-  stem: string
-  explanation: string
-  confidence: 'high' | 'medium' | 'low'
-  is_defective: number
-  chapter_id: number
-  chapter_no: number
-  chapter_title: string
-  subject_name: string
-  is_favorite: number
-}
-
-interface OptionRow extends RowDataPacket {
-  label: string
-  content: string
-  is_correct: number
 }
 
 interface AnswerRow extends RowDataPacket {
@@ -309,22 +289,13 @@ practiceRouter.get(
     const questionId = questionIds[index]
     if (!questionId) throw new HttpError(404, '题目不存在')
 
-    const [[questions], [options], [answers]] = await Promise.all([
-      db.execute<QuestionRow[]>(
-        `SELECT q.id, q.external_key, q.question_no, q.type, q.stem, q.explanation,
-                q.confidence, q.is_defective, q.chapter_id, c.chapter_no,
-                c.title AS chapter_title, s.name AS subject_name,
-                EXISTS(SELECT 1 FROM favorites f WHERE f.user_id = ? AND f.question_id = q.id) AS is_favorite
-         FROM questions q
-         INNER JOIN chapters c ON c.id = q.chapter_id
-         INNER JOIN subjects s ON s.id = q.subject_id
-         WHERE q.id = ? LIMIT 1`,
+    const [question, [favoriteRows], [answers]] = await Promise.all([
+      getCachedQuestion(questionId),
+      db.execute<(RowDataPacket & { is_favorite: number })[]>(
+        `SELECT EXISTS(
+           SELECT 1 FROM favorites WHERE user_id = ? AND question_id = ?
+         ) AS is_favorite`,
         [request.user!.id, questionId],
-      ),
-      db.execute<OptionRow[]>(
-        `SELECT label, content, is_correct FROM question_options
-         WHERE question_id = ? ORDER BY sort_order, label`,
-        [questionId],
       ),
       db.execute<AnswerRow[]>(
         `SELECT selected_labels, correct_labels, is_correct
@@ -334,23 +305,21 @@ practiceRouter.get(
         [session.id, request.user!.id, questionId],
       ),
     ])
-    const question = questions[0]
     if (!question) throw new HttpError(404, '题目不存在')
     const answer = answers[0]
-    await db.execute('UPDATE practice_sessions SET current_index = ? WHERE id = ?', [index, session.id])
     response.json({
       question: {
         id: question.id,
-        externalKey: question.external_key,
-        number: question.question_no,
+        externalKey: question.externalKey,
+        number: question.number,
         type: question.type,
         stem: question.stem,
-        chapterId: question.chapter_id,
-        chapterNumber: question.chapter_no,
-        chapterTitle: question.chapter_title,
-        subjectName: question.subject_name,
-        isFavorite: Boolean(question.is_favorite),
-        options: options.map((option) => ({ label: option.label, content: option.content })),
+        chapterId: question.chapterId,
+        chapterNumber: question.chapterNumber,
+        chapterTitle: question.chapterTitle,
+        subjectName: question.subjectName,
+        isFavorite: Boolean(favoriteRows[0]?.is_favorite),
+        options: question.options.map((option) => ({ label: option.label, content: option.content })),
       },
       position: { index, total: questionIds.length },
       result: answer
@@ -360,7 +329,7 @@ practiceRouter.get(
             isCorrect: answer.is_correct === null ? null : Boolean(answer.is_correct),
             explanation: question.explanation,
             confidence: question.confidence,
-            isDefective: Boolean(question.is_defective),
+            isDefective: question.isDefective,
           }
         : null,
     })
@@ -381,25 +350,9 @@ practiceRouter.post(
     const questionIds = jsonArray<number>(session.question_ids)
     if (!questionIds.includes(questionId)) throw new HttpError(400, '这道题不属于当前练习')
 
-    const [[questions], [options]] = await Promise.all([
-      db.execute<QuestionRow[]>(
-        `SELECT q.*, c.chapter_no, c.title AS chapter_title, s.name AS subject_name,
-                FALSE AS is_favorite
-         FROM questions q
-         INNER JOIN chapters c ON c.id = q.chapter_id
-         INNER JOIN subjects s ON s.id = q.subject_id
-         WHERE q.id = ? LIMIT 1`,
-        [questionId],
-      ),
-      db.execute<OptionRow[]>(
-        `SELECT label, content, is_correct FROM question_options
-         WHERE question_id = ? ORDER BY sort_order, label`,
-        [questionId],
-      ),
-    ])
-    const question = questions[0]
+    const question = await getCachedQuestion(questionId)
     if (!question) throw new HttpError(404, '题目不存在')
-    const availableLabels = new Set(options.map((option) => option.label))
+    const availableLabels = new Set(question.options.map((option) => option.label))
     const selectedLabels = normalizeLabels(input.selectedLabels)
     if (selectedLabels.some((label) => !availableLabels.has(label))) {
       throw new HttpError(400, '提交了不存在的选项')
@@ -407,8 +360,8 @@ practiceRouter.post(
     if (question.type !== 'multiple' && selectedLabels.length !== 1) {
       throw new HttpError(400, '单选题或判断题只能选择一个答案')
     }
-    const correctLabels = options.filter((option) => option.is_correct).map((option) => option.label)
-    const isDefective = Boolean(question.is_defective)
+    const correctLabels = question.options.filter((option) => option.isCorrect).map((option) => option.label)
+    const isDefective = question.isDefective
     const isCorrect = isDefective ? null : answersMatch(selectedLabels, correctLabels)
 
     await db.execute<ResultSetHeader>(
@@ -448,12 +401,17 @@ practiceRouter.post(
       [session.id, request.user!.id],
     )
     const answered = progressRows[0]?.answered ?? 0
-    if (answered >= questionIds.length) {
-      await db.execute(
-        'UPDATE practice_sessions SET completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP) WHERE id = ?',
-        [session.id],
-      )
-    }
+    const completed = answered >= questionIds.length
+    const answeredIndex = questionIds.indexOf(questionId)
+    const resumeIndex = Math.min(answeredIndex + 1, questionIds.length - 1)
+    await db.execute(
+      `UPDATE practice_sessions
+       SET current_index = ?,
+           completed_at = IF(?, COALESCE(completed_at, CURRENT_TIMESTAMP), completed_at)
+       WHERE id = ?`,
+      [resumeIndex, completed, session.id],
+    )
+    invalidateStatsCache(request.user!.id)
 
     response.json({
       result: {
@@ -464,7 +422,7 @@ practiceRouter.post(
         confidence: question.confidence,
         isDefective,
       },
-      progress: { answered, total: questionIds.length, completed: answered >= questionIds.length },
+      progress: { answered, total: questionIds.length, completed },
     })
   }),
 )
@@ -485,6 +443,7 @@ practiceRouter.put(
         [request.user!.id, questionId],
       )
     }
+    invalidateStatsCache(request.user!.id)
     response.json({ favorite: input.favorite })
   }),
 )

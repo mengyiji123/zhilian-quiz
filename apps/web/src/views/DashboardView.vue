@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, shallowRef } from 'vue'
+import { storeToRefs } from 'pinia'
 
 import MetricStrip from '@/components/common/MetricStrip.vue'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
-import type { Subject } from '@/types'
+import { useCatalogStore } from '@/stores/catalog'
 
 interface StatsSummary {
   attempts: number
@@ -16,7 +17,8 @@ interface StatsSummary {
 }
 
 const auth = useAuthStore()
-const subjects = shallowRef<Subject[]>([])
+const catalog = useCatalogStore()
+const { subjects } = storeToRefs(catalog)
 const summary = shallowRef<StatsSummary | null>(null)
 const loading = shallowRef(true)
 const error = shallowRef('')
@@ -57,11 +59,10 @@ const summaryItems = computed(() => [
 
 onMounted(async () => {
   try {
-    const [catalog, stats] = await Promise.all([
-      api<{ subjects: Subject[] }>('/catalog/subjects'),
+    const [, stats] = await Promise.all([
+      catalog.load(),
       api<{ summary: StatsSummary }>('/stats'),
     ])
-    subjects.value = catalog.subjects
     summary.value = stats.summary
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : '加载失败'

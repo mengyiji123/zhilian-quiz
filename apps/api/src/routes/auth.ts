@@ -6,6 +6,7 @@ import { z } from 'zod'
 
 import {
   createSession,
+  invalidateAuthSession,
   requireAuth,
   SESSION_COOKIE,
   setSessionCookie,
@@ -64,6 +65,7 @@ authRouter.post(
   asyncHandler(async (request, response) => {
     if (request.sessionTokenHash) {
       await db.execute('DELETE FROM auth_sessions WHERE token_hash = ?', [request.sessionTokenHash])
+      invalidateAuthSession(request.sessionTokenHash)
     }
     response.clearCookie(SESSION_COOKIE, {
       httpOnly: true,

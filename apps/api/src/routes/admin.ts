@@ -3,10 +3,12 @@ import { Router } from 'express'
 import type { ResultSetHeader, RowDataPacket } from 'mysql2'
 import { z } from 'zod'
 
-import { requireAdmin, requireAuth } from '../auth.js'
+import { invalidateUserAuth, requireAdmin, requireAuth } from '../auth.js'
 import { db } from '../db.js'
 import { paginationClause } from '../domain/sql-values.js'
 import { asyncHandler, HttpError, parseBody, parseId } from '../http.js'
+import { invalidateQuestionCache } from '../question-cache.js'
+import { invalidateCatalogCache } from './catalog.js'
 
 interface UserRow extends RowDataPacket {
   id: number
@@ -258,6 +260,7 @@ adminRouter.patch(
     if (input.isActive === false) {
       await db.execute('DELETE FROM auth_sessions WHERE user_id = ?', [userId])
     }
+    invalidateUserAuth(userId)
     response.status(204).end()
   }),
 )
@@ -460,6 +463,8 @@ adminRouter.put(
         )
       }
       await connection.commit()
+      invalidateQuestionCache(questionId)
+      invalidateCatalogCache()
       response.status(204).end()
     } catch (error) {
       await connection.rollback()

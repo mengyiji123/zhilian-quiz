@@ -5,9 +5,11 @@ import { z } from 'zod'
 
 import { readProviderText } from '../ai/provider-stream.js'
 import { requireAdmin, requireAuth } from '../auth.js'
+import { TtlCache } from '../cache.js'
 import { db } from '../db.js'
 import { decryptSecret, encryptSecret } from '../encryption.js'
 import { asyncHandler, HttpError, parseBody, parseId } from '../http.js'
+import { getCachedQuestion } from '../question-cache.js'
 
 const DEFAULT_SYSTEM_PROMPT = `你是一名耐心、严谨的数据库课程助教。请围绕当前题目回答学生的问题：
 1. 先直接回应疑问，再解释关键概念；
@@ -25,25 +27,17 @@ interface SettingRow extends RowDataPacket {
   updated_at: Date
 }
 
-interface QuestionContextRow extends RowDataPacket {
-  id: number
-  stem: string
-  explanation: string
-  type: string
-  chapter_title: string
-}
-
-interface OptionContextRow extends RowDataPacket {
-  label: string
-  content: string
-  is_correct: number
-}
-
 interface MessageRow extends RowDataPacket {
   role: 'user' | 'assistant'
   content: string
   created_at: Date
 }
+
+const messageHistory = `(
+  SELECT id, user_id, question_id, role, content, created_at FROM ai_messages
+  UNION ALL
+  SELECT id, user_id, question_id, role, content, created_at FROM ai_messages_archive
+)`
 
 const askSchema = z.object({
   message: z.string().trim().min(1).max(2000),
@@ -55,6 +49,15 @@ const settingsSchema = z.object({
   apiKey: z.string().trim().min(1).max(1000).optional(),
   systemPrompt: z.string().trim().min(1).max(5000).default(DEFAULT_SYSTEM_PROMPT),
 })
+
+const settingsCache = new TtlCache<'settings', SettingRow | null>(10 * 60_000, 1)
+
+function getAiSettings(): Promise<SettingRow | null> {
+  return settingsCache.getOrLoad('settings', async () => {
+    const [rows] = await db.execute<SettingRow[]>('SELECT * FROM ai_settings WHERE id = 1 LIMIT 1')
+    return rows[0] ?? null
+  })
+}
 
 function buildProviderBody(
   endpointUrl: string,
@@ -88,8 +91,8 @@ aiRouter.use(requireAuth)
 aiRouter.get(
   '/status',
   asyncHandler(async (_request, response) => {
-    const [rows] = await db.execute<SettingRow[]>('SELECT * FROM ai_settings WHERE id = 1 LIMIT 1')
-    response.json({ configured: Boolean(rows[0]), model: rows[0]?.model ?? null })
+    const setting = await getAiSettings()
+    response.json({ configured: Boolean(setting), model: setting?.model ?? null })
   }),
 )
 
@@ -99,12 +102,12 @@ aiRouter.get(
     const questionId = parseId(request.params.questionId, '题目 ID')
     const [rows] = await db.execute<MessageRow[]>(
       `SELECT role, content, created_at
-       FROM ai_messages WHERE user_id = ? AND question_id = ?
-       ORDER BY created_at, id LIMIT 50`,
+       FROM ${messageHistory} messages WHERE user_id = ? AND question_id = ?
+       ORDER BY created_at DESC, id DESC LIMIT 50`,
       [request.user!.id, questionId],
     )
     response.json({
-      messages: rows.map((row) => ({ role: row.role, content: row.content, createdAt: row.created_at })),
+      messages: rows.reverse().map((row) => ({ role: row.role, content: row.content, createdAt: row.created_at })),
     })
   }),
 )
@@ -115,25 +118,19 @@ aiRouter.post(
   asyncHandler(async (request, response) => {
     const questionId = parseId(request.params.questionId, '题目 ID')
     const input = parseBody(askSchema, request.body)
-    const [[answerRows], [settingRows], [questionRows], [optionRows], [historyRows]] = await Promise.all([
+    const [[answerRows], setting, question, [historyRows]] = await Promise.all([
       db.execute<(RowDataPacket & { total: number })[]>(
-        'SELECT COUNT(*) AS total FROM practice_answers WHERE user_id = ? AND question_id = ?',
-        [request.user!.id, questionId],
+        `SELECT EXISTS(
+           SELECT 1 FROM practice_answers WHERE user_id = ? AND question_id = ?
+           UNION ALL
+           SELECT 1 FROM practice_answers_archive WHERE user_id = ? AND question_id = ?
+         ) AS total`,
+        [request.user!.id, questionId, request.user!.id, questionId],
       ),
-      db.execute<SettingRow[]>('SELECT * FROM ai_settings WHERE id = 1 LIMIT 1'),
-      db.execute<QuestionContextRow[]>(
-        `SELECT q.id, q.stem, q.explanation, q.type, c.title AS chapter_title
-         FROM questions q INNER JOIN chapters c ON c.id = q.chapter_id
-         WHERE q.id = ? LIMIT 1`,
-        [questionId],
-      ),
-      db.execute<OptionContextRow[]>(
-        `SELECT label, content, is_correct FROM question_options
-         WHERE question_id = ? ORDER BY sort_order, label`,
-        [questionId],
-      ),
+      getAiSettings(),
+      getCachedQuestion(questionId),
       db.execute<MessageRow[]>(
-        `SELECT role, content, created_at FROM ai_messages
+        `SELECT role, content, created_at FROM ${messageHistory} messages
          WHERE user_id = ? AND question_id = ?
          ORDER BY created_at DESC, id DESC LIMIT 10`,
         [request.user!.id, questionId],
@@ -142,15 +139,13 @@ aiRouter.post(
     if (!(answerRows[0]?.total ?? 0)) {
       throw new HttpError(403, '提交答案并查看解析后，才能询问 AI')
     }
-    const setting = settingRows[0]
     if (!setting) throw new HttpError(503, '管理员还没有配置 AI 服务')
-    const question = questionRows[0]
     if (!question) throw new HttpError(404, '题目不存在')
 
-    const correctLabels = optionRows.filter((option) => option.is_correct).map((option) => option.label)
-    const optionText = optionRows.map((option) => `${option.label}. ${option.content}`).join('\n')
+    const correctLabels = question.options.filter((option) => option.isCorrect).map((option) => option.label)
+    const optionText = question.options.map((option) => `${option.label}. ${option.content}`).join('\n')
     const context = [
-      `章节：${question.chapter_title}`,
+      `章节：${question.chapterTitle}`,
       `题型：${question.type}`,
       `题干：${question.stem}`,
       `选项：\n${optionText}`,
@@ -257,8 +252,7 @@ aiAdminRouter.use(requireAuth, requireAdmin)
 aiAdminRouter.get(
   '/settings',
   asyncHandler(async (_request, response) => {
-    const [rows] = await db.execute<SettingRow[]>('SELECT * FROM ai_settings WHERE id = 1 LIMIT 1')
-    const row = rows[0]
+    const row = await getAiSettings()
     response.json({
       settings: row
         ? {
@@ -283,8 +277,7 @@ aiAdminRouter.put(
   '/settings',
   asyncHandler(async (request, response) => {
     const input = parseBody(settingsSchema, request.body)
-    const [existingRows] = await db.execute<SettingRow[]>('SELECT * FROM ai_settings WHERE id = 1 LIMIT 1')
-    const existing = existingRows[0]
+    const existing = await getAiSettings()
     if (!existing && !input.apiKey) throw new HttpError(400, '首次配置时必须填写 API Key')
     const secret = input.apiKey
       ? encryptSecret(input.apiKey)
@@ -315,6 +308,7 @@ aiAdminRouter.put(
         request.user!.id,
       ],
     )
+    settingsCache.clear()
     response.status(204).end()
   }),
 )

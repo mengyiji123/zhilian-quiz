@@ -10,6 +10,8 @@ import type { ResultSetHeader, RowDataPacket } from 'mysql2'
 import { config } from './config.js'
 import { db, pingDatabase } from './db.js'
 import { HttpError } from './http.js'
+import { startDataMaintenance } from './maintenance.js'
+import { performanceMiddleware } from './observability.js'
 import { adminRouter } from './routes/admin.js'
 import { aiAdminRouter, aiRouter } from './routes/ai.js'
 import { authRouter } from './routes/auth.js'
@@ -32,14 +34,13 @@ async function bootstrapAdmin(): Promise<void> {
 
 await pingDatabase()
 await bootstrapAdmin()
-await db.execute('DELETE FROM auth_sessions WHERE expires_at <= NOW()')
-
 const app = express()
 if (config.trustProxy) app.set('trust proxy', 1)
 app.disable('x-powered-by')
 app.use(helmet({ contentSecurityPolicy: false }))
 app.use(express.json({ limit: '1mb' }))
 app.use(cookieParser())
+app.use(performanceMiddleware)
 
 app.get('/api/health', async (_request, response, next) => {
   try {
@@ -85,9 +86,11 @@ app.use(errorHandler)
 const server = app.listen(config.port, config.host, () => {
   console.log(`刷题 API 已启动：http://${config.host}:${config.port}`)
 })
+const stopDataMaintenance = startDataMaintenance()
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
+    stopDataMaintenance()
     server.close(() => {
       void db.end().finally(() => process.exit(0))
     })

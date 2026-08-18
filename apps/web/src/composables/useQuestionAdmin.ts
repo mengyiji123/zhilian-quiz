@@ -1,6 +1,7 @@
 import { onScopeDispose, reactive, shallowReadonly, shallowRef, watch } from 'vue'
 
 import { api } from '@/lib/api'
+import { useCatalogStore } from '@/stores/catalog'
 import type {
   AdminQuestionDetail,
   AdminQuestionFilters,
@@ -24,6 +25,7 @@ const defaultFilters: AdminQuestionFilters = {
 }
 
 export function useQuestionAdmin() {
+  const catalog = useCatalogStore()
   const subjects = shallowRef<Subject[]>([])
   const items = shallowRef<AdminQuestionListItem[]>([])
   const detail = shallowRef<AdminQuestionDetail | null>(null)
@@ -109,8 +111,7 @@ export function useQuestionAdmin() {
   async function initialize(): Promise<void> {
     loading.value = true
     try {
-      const payload = await api<{ subjects: Subject[] }>('/catalog/subjects')
-      subjects.value = payload.subjects
+      subjects.value = await catalog.load()
       await loadList()
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : '题目管理加载失败'
@@ -139,7 +140,32 @@ export function useQuestionAdmin() {
         method: 'PUT',
         body: JSON.stringify(input),
       })
-      await Promise.all([loadDetail(selectedId.value), loadList()])
+      const updatedAt = new Date().toISOString()
+      const correctLabels = input.options.filter((option) => option.isCorrect).map((option) => option.label)
+      items.value = items.value.map((item) => item.id === selectedId.value
+        ? { ...item, type: input.type, stem: input.stem, confidence: input.confidence,
+            isDefective: input.isDefective, correctLabels, updatedAt }
+        : item)
+      if (detail.value?.id === selectedId.value) {
+        const pointNames = new Map(subjects.value.flatMap((subject) => (
+          subject.knowledgePoints.map((point) => [point.id, point.name] as const)
+        )))
+        detail.value = {
+          ...detail.value,
+          type: input.type,
+          stem: input.stem,
+          explanation: input.explanation,
+          confidence: input.confidence,
+          isDefective: input.isDefective,
+          options: input.options,
+          knowledgePoints: input.knowledgePointIds.map((id) => ({ id, name: pointNames.get(id) ?? `知识点 ${id}` })),
+          updatedAt,
+        }
+      }
+      catalog.invalidate()
+      if (filters.q || filters.type || filters.sort === 'updated_desc' || filters.sort === 'type_asc') {
+        await loadList()
+      }
       notice.value = '题目、选项和答案已保存'
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : '保存题目失败'
@@ -157,7 +183,20 @@ export function useQuestionAdmin() {
       const payload = await api<{ resolved: number }>(`/admin/questions/${selectedId.value}/reports/resolve`, {
         method: 'POST',
       })
-      await Promise.all([loadDetail(selectedId.value), loadList()])
+      const resolvedAt = new Date().toISOString()
+      if (payload.resolved && detail.value?.id === selectedId.value) {
+        detail.value = {
+          ...detail.value,
+          openReportCount: 0,
+          reports: detail.value.reports.map((report) => report.status === 'open'
+            ? { ...report, status: 'resolved', resolvedAt, updatedAt: resolvedAt }
+            : report),
+        }
+        items.value = items.value.map((item) => item.id === selectedId.value
+          ? { ...item, openReportCount: 0, lastReportedAt: null }
+          : item)
+      }
+      if (filters.reportStatus !== 'all' || filters.sort === 'reports_desc') await loadList()
       notice.value = payload.resolved ? `已处理 ${payload.resolved} 条报错` : '这道题没有待处理报错'
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : '处理报错失败'

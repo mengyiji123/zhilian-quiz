@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, shallowRef, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 
 import ChapterChoiceCard from '@/components/practice/ChapterChoiceCard.vue'
 import { useChapterPracticeProgress } from '@/composables/useChapterPracticeProgress'
 import { api } from '@/lib/api'
-import type { PracticeMode, QuestionType, Subject } from '@/types'
+import { useCatalogStore } from '@/stores/catalog'
+import type { PracticeMode, QuestionType } from '@/types'
 
 const modes: Array<{ value: PracticeMode; label: string; description: string }> = [
   { value: 'subject', label: '科目刷题', description: '按题库顺序练习' },
@@ -23,7 +25,8 @@ const typeOptions: Array<{ value: QuestionType; label: string }> = [
 
 const route = useRoute()
 const router = useRouter()
-const subjects = shallowRef<Subject[]>([])
+const catalog = useCatalogStore()
+const { subjects } = storeToRefs(catalog)
 const loading = shallowRef(true)
 const submitting = shallowRef(false)
 const error = shallowRef('')
@@ -98,12 +101,11 @@ watch(
 
 onMounted(async () => {
   try {
-    const payload = await api<{ subjects: Subject[] }>('/catalog/subjects')
-    subjects.value = payload.subjects
+    const loadedSubjects = await catalog.load()
     const querySubject = Number(route.query.subject)
-    form.subjectId = payload.subjects.some((subject) => subject.id === querySubject)
+    form.subjectId = loadedSubjects.some((subject) => subject.id === querySubject)
       ? querySubject
-      : (payload.subjects[0]?.id ?? 0)
+      : (loadedSubjects[0]?.id ?? 0)
     await nextTick()
     const queryChapter = Number(route.query.chapter)
     if (form.mode === 'chapter' && selectedSubject.value?.chapters.some((chapter) => chapter.id === queryChapter)) {

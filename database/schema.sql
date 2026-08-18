@@ -166,6 +166,39 @@ CREATE TABLE IF NOT EXISTS practice_answers (
   CONSTRAINT fk_practice_answers_question FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS practice_sessions_archive (
+  id CHAR(36) NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  subject_id BIGINT UNSIGNED NOT NULL,
+  mode ENUM('subject', 'chapter', 'random', 'wrong', 'favorite') NOT NULL,
+  filters JSON NOT NULL,
+  question_ids JSON NOT NULL,
+  current_index INT NOT NULL DEFAULT 0,
+  completed_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  archived_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY ix_practice_sessions_archive_user_created (user_id, created_at),
+  KEY ix_practice_sessions_archive_completed (completed_at)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS practice_answers_archive (
+  id BIGINT UNSIGNED NOT NULL,
+  session_id CHAR(36) NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  question_id BIGINT UNSIGNED NOT NULL,
+  selected_labels JSON NOT NULL,
+  correct_labels JSON NOT NULL,
+  is_correct BOOLEAN NULL,
+  answered_at TIMESTAMP NOT NULL,
+  archived_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY ix_practice_answers_archive_user_time (user_id, answered_at),
+  KEY ix_practice_answers_archive_session_question (session_id, question_id, answered_at),
+  KEY ix_practice_answers_archive_question (question_id)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS favorites (
   user_id BIGINT UNSIGNED NOT NULL,
   question_id BIGINT UNSIGNED NOT NULL,
@@ -216,4 +249,16 @@ CREATE TABLE IF NOT EXISTS ai_messages (
   KEY ix_ai_messages_context (user_id, question_id, created_at),
   CONSTRAINT fk_ai_messages_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_ai_messages_question FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS ai_messages_archive (
+  id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  question_id BIGINT UNSIGNED NOT NULL,
+  role ENUM('user', 'assistant') NOT NULL,
+  content MEDIUMTEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  archived_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY ix_ai_messages_archive_context (user_id, question_id, created_at)
 ) ENGINE=InnoDB;
